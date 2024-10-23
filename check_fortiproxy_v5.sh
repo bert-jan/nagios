@@ -46,7 +46,7 @@ if [[ -z "$FORTIPROXY_IP" || -z "$TOKEN" || -z "$COMPONENT" ]]; then
 fi
 
 # Define API URL for system sensor check
-API_URL="https://${FORTIPROXY_IP}/api/v2/monitor/system/sensor"
+API_URL="https://${FORTIPROXY_IP}/api/v2/monitor/system/sensor-info"
 
 # Curl command to fetch sensor data using bearer token
 response=$(curl -k -s -H "Authorization: Bearer ${TOKEN}" -X GET "${API_URL}")
@@ -64,6 +64,7 @@ check_sensors() {
     local sensor2=$3
     local is_temp=$4
     local perf_unit=$5
+    local perf_desc=$6
 
     sensor1_status=$(echo "$response" | jq -r --arg SENSOR "$sensor1" '.results[] | select(.name == $SENSOR) | .status')
     sensor1_value=$(echo "$response" | jq -r --arg SENSOR "$sensor1" '.results[] | select(.name == $SENSOR) | .value')
@@ -75,29 +76,29 @@ check_sensors() {
     if [[ "$is_temp" == "true" ]]; then
         # Check thresholds for sensor 1
         if (( $(echo "$sensor1_value > $CRIT_TEMP" | bc -l) )); then
-            echo "CRITICAL: $sensor1 ($sensor1_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor1}=${sensor1_value}${perf_unit}"
+            echo "CRITICAL: $sensor1 ($sensor1_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor1} ${perf_desc}=${sensor1_value}${perf_unit}"
             exit $CRITICAL
         elif (( $(echo "$sensor1_value > $WARN_TEMP" | bc -l) )); then
-            echo "WARNING: $sensor1 ($sensor1_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor1}=${sensor1_value}${perf_unit}"
+            echo "WARNING: $sensor1 ($sensor1_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor1} ${perf_desc}=${sensor1_value}${perf_unit}"
             exit $WARNING
         fi
 
         # Check thresholds for sensor 2
         if (( $(echo "$sensor2_value > $CRIT_TEMP" | bc -l) )); then
-            echo "CRITICAL: $sensor2 ($sensor2_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor2}=${sensor2_value}${perf_unit}"
+            echo "CRITICAL: $sensor2 ($sensor2_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor2} ${perf_desc}=${sensor2_value}${perf_unit}"
             exit $CRITICAL
         elif (( $(echo "$sensor2_value > $WARN_TEMP" | bc -l) )); then
-            echo "WARNING: $sensor2 ($sensor2_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor2}=${sensor2_value}${perf_unit}"
+            echo "WARNING: $sensor2 ($sensor2_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor2} ${perf_desc}=${sensor2_value}${perf_unit}"
             exit $WARNING
         fi
     fi
 
     # Check the status of both sensors
     if [[ "$sensor1_status" == "normal" && "$sensor2_status" == "normal" ]]; then
-        echo "OK: Both $component_name are normal | ${sensor1}=${sensor1_value}${perf_unit} ${sensor2}=${sensor2_value}${perf_unit}"
+        echo "OK: Both $component_name are normal | ${sensor1} ${perf_desc}=${sensor1_value}${perf_unit} ${sensor2} ${perf_desc}=${sensor2_value}${perf_unit}"
         exit $OK
     elif [[ "$sensor1_status" != "normal" || "$sensor2_status" != "normal" ]]; then
-        echo "CRITICAL: $component_name status issue detected | ${sensor1}_status=${sensor1_status}, ${sensor2}_status=${sensor2_status} ${sensor1}=${sensor1_value}${perf_unit} ${sensor2}=${sensor2_value}${perf_unit}"
+        echo "CRITICAL: $component_name status issue detected | ${sensor1}_status=${sensor1_status}, ${sensor2}_status=${sensor2_status} ${sensor1} ${perf_desc}=${sensor1_value}${perf_unit} ${sensor2} ${perf_desc}=${sensor2_value}${perf_unit}"
         exit $CRITICAL
     else
         echo "UNKNOWN: $component_name status could not be determined"
@@ -109,15 +110,18 @@ check_sensors() {
 case $COMPONENT in
     psu)
         PERF_UNIT="V"  # Volt for power supply unit
-        check_sensors "PSU" "PSU1" "PSU2" "false" "$PERF_UNIT"
+        PERF_DESC="Power Status (V)"
+        check_sensors "PSU" "PSU1" "PSU2" "false" "$PERF_UNIT" "$PERF_DESC"
         ;;
     fan)
         PERF_UNIT="RPM"  # Revolutions per minute for fans
-        check_sensors "Fan" "PSUFAN1" "PSUFAN2" "false" "$PERF_UNIT"
+        PERF_DESC="FAN Speed (RPM)"
+        check_sensors "Fan" "PSUFAN1" "PSUFAN2" "false" "$PERF_UNIT" "$PERF_DESC"
         ;;
     temp)
         PERF_UNIT="°C"  # Celsius for temperature
-        check_sensors "Temperature" "PSUTEMP1" "PSUTEMP2" "true" "$PERF_UNIT"
+        PERF_DESC="Temperature (°C)"
+        check_sensors "Temperature" "PSUTEMP1" "PSUTEMP2" "true" "$PERF_UNIT" "$PERF_DESC"
         ;;
     *)
         echo "UNKNOWN: Invalid component specified. Please use 'psu', 'fan', or 'temp'."
