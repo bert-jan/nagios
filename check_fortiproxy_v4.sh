@@ -8,22 +8,18 @@ UNKNOWN=3
 
 # Default values
 FORTIPROXY_IP=""
-USER=""
-PASSWORD=""
+TOKEN=""
 COMPONENT=""
 WARN_TEMP=35
 CRIT_TEMP=40
-TOKEN_URL="https://${FORTIPROXY_IP}/api/v2/auth/login/"
 API_URL=""
-TOKEN=""
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 -H <fortiproxy_ip> -u <username> -p <password> -c <component> [-w <warning_temp>] [-C <critical_temp>]"
+    echo "Usage: $0 -H <fortiproxy_ip> -t <bearer_token> -c <component> [-w <warning_temp>] [-C <critical_temp>]"
     echo ""
     echo "  -H | --host          FortiProxy IP address"
-    echo "  -u | --user          Username for FortiProxy"
-    echo "  -p | --pass          Password for FortiProxy"
+    echo "  -t | --token         Bearer token for FortiProxy"
     echo "  -c | --component     Component to check (psu, fan, temp)"
     echo "  -w | --warning       Warning temperature threshold (default: 35°C)"
     echo "  -C | --critical      Critical temperature threshold (default: 40°C)"
@@ -34,8 +30,7 @@ usage() {
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -H|--host) FORTIPROXY_IP="$2"; shift ;;
-        -u|--user) USER="$2"; shift ;;
-        -p|--pass) PASSWORD="$2"; shift ;;
+        -t|--token) TOKEN="$2"; shift ;;
         -c|--component) COMPONENT="$2"; shift ;;
         -w|--warning) WARN_TEMP="$2"; shift ;;
         -C|--critical) CRIT_TEMP="$2"; shift ;;
@@ -45,29 +40,9 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # Check if mandatory arguments are provided
-if [[ -z "$FORTIPROXY_IP" || -z "$USER" || -z "$PASSWORD" || -z "$COMPONENT" ]]; then
+if [[ -z "$FORTIPROXY_IP" || -z "$TOKEN" || -z "$COMPONENT" ]]; then
     usage
 fi
-
-# Function to get the bearer token using user credentials
-get_token() {
-    response=$(curl -k -s -X POST "$TOKEN_URL" \
-      -H "Content-Type: application/json" \
-      -d "{\"username\": \"$USER\", \"password\": \"$PASSWORD\"}")
-    
-    # Extract token from response
-    TOKEN=$(echo "$response" | jq -r '.token')
-    
-    # Check if token is valid
-    if [[ "$TOKEN" == "null" || -z "$TOKEN" ]]; then
-        echo "CRITICAL: Failed to authenticate and retrieve token"
-        exit $CRITICAL
-    fi
-}
-
-# Get bearer token
-TOKEN_URL="https://${FORTIPROXY_IP}/api/v2/auth/login/"
-get_token
 
 # Define API URL for system sensor check
 API_URL="https://${FORTIPROXY_IP}/api/v2/monitor/system/sensor"
