@@ -75,29 +75,29 @@ check_sensors() {
     if [[ "$is_temp" == "true" ]]; then
         # Check thresholds for sensor 1
         if (( $(echo "$sensor1_value > $CRIT_TEMP" | bc -l) )); then
-            echo "CRITICAL: $sensor1 ($sensor1_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor1}_temp=${sensor1_value}${perf_unit}"
+            echo "CRITICAL: $sensor1 ($sensor1_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor1}=${sensor1_value}${perf_unit}"
             exit $CRITICAL
         elif (( $(echo "$sensor1_value > $WARN_TEMP" | bc -l) )); then
-            echo "WARNING: $sensor1 ($sensor1_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor1}_temp=${sensor1_value}${perf_unit}"
+            echo "WARNING: $sensor1 ($sensor1_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor1}=${sensor1_value}${perf_unit}"
             exit $WARNING
         fi
 
         # Check thresholds for sensor 2
         if (( $(echo "$sensor2_value > $CRIT_TEMP" | bc -l) )); then
-            echo "CRITICAL: $sensor2 ($sensor2_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor2}_temp=${sensor2_value}${perf_unit}"
+            echo "CRITICAL: $sensor2 ($sensor2_value°C) exceeds critical threshold ($CRIT_TEMP°C) | ${sensor2}=${sensor2_value}${perf_unit}"
             exit $CRITICAL
         elif (( $(echo "$sensor2_value > $WARN_TEMP" | bc -l) )); then
-            echo "WARNING: $sensor2 ($sensor2_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor2}_temp=${sensor2_value}${perf_unit}"
+            echo "WARNING: $sensor2 ($sensor2_value°C) exceeds warning threshold ($WARN_TEMP°C) | ${sensor2}=${sensor2_value}${perf_unit}"
             exit $WARNING
         fi
     fi
 
     # Check the status of both sensors
     if [[ "$sensor1_status" == "normal" && "$sensor2_status" == "normal" ]]; then
-        echo "OK: Both $component_name are normal | ${sensor1}${perf_unit}=${sensor1_value}${perf_unit} ${sensor2}${perf_unit}=${sensor2_value}${perf_unit}"
+        echo "OK: Both $component_name are normal | ${sensor1}=${sensor1_value}${perf_unit} ${sensor2}=${sensor2_value}${perf_unit}"
         exit $OK
     elif [[ "$sensor1_status" != "normal" || "$sensor2_status" != "normal" ]]; then
-        echo "CRITICAL: $component_name status issue detected | ${sensor1}_status=${sensor1_status}, ${sensor2}_status=${sensor2_status} ${sensor1}${perf_unit}=${sensor1_value}${perf_unit} ${sensor2}${perf_unit}=${sensor2_value}${perf_unit}"
+        echo "CRITICAL: $component_name status issue detected | ${sensor1}_status=${sensor1_status}, ${sensor2}_status=${sensor2_status} ${sensor1}=${sensor1_value}${perf_unit} ${sensor2}=${sensor2_value}${perf_unit}"
         exit $CRITICAL
     else
         echo "UNKNOWN: $component_name status could not be determined"
@@ -108,15 +108,15 @@ check_sensors() {
 # Check the component provided by the user
 case $COMPONENT in
     psu)
-        PERF_UNIT="_voltage"
+        PERF_UNIT="V"  # Volt for power supply unit
         check_sensors "PSU" "PSU1" "PSU2" "false" "$PERF_UNIT"
         ;;
     fan)
-        PERF_UNIT="_rpm"
+        PERF_UNIT="RPM"  # Revolutions per minute for fans
         check_sensors "Fan" "PSUFAN1" "PSUFAN2" "false" "$PERF_UNIT"
         ;;
     temp)
-        PERF_UNIT="_celcius"
+        PERF_UNIT="°C"  # Celsius for temperature
         check_sensors "Temperature" "PSUTEMP1" "PSUTEMP2" "true" "$PERF_UNIT"
         ;;
     *)
