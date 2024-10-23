@@ -1,22 +1,38 @@
 #!/bin/bash
 
 # Default variables for FortiProxy API
-FORTIPROXY_API_URL="https://<fortiproxy-ip>/api/v2/monitor/system/proxy-sessions"
-FORTIPROXY_TOKEN="<your_bearer_token>"
+FORTIPROXY_HOST=""
+FORTIPROXY_VDOM=""
+FORTIPROXY_TOKEN=""
+FORTIPROXY_API_URL=""
 CRIT_THRESHOLD=1000  # Define critical threshold for proxy sessions
 WARN_THRESHOLD=500   # Define warning threshold for proxy sessions
 
-# Parse command line arguments for thresholds (optional)
+# Parse command line arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -c|--critical) CRIT_THRESHOLD="$2"; shift ;;
         -w|--warning) WARN_THRESHOLD="$2"; shift ;;
         -t|--token) FORTIPROXY_TOKEN="$2"; shift ;;
-        -u|--url) FORTIPROXY_API_URL="$2"; shift ;;
+        -H|--host) FORTIPROXY_HOST="$2"; shift ;;
+        -s|--vdom) FORTIPROXY_VDOM="$2"; shift ;;
         *) echo "Unknown parameter passed: $1"; exit 3 ;;
     esac
     shift
 done
+
+# Check if the required arguments are provided
+if [[ -z "$FORTIPROXY_HOST" || -z "$FORTIPROXY_TOKEN" ]]; then
+    echo "UNKNOWN - Host (-H) and Token (-t) are required arguments."
+    exit 3
+fi
+
+# Set the FortiProxy API URL, including VDOM scope if provided
+if [[ -n "$FORTIPROXY_VDOM" ]]; then
+    FORTIPROXY_API_URL="https://$FORTIPROXY_HOST/api/v2/monitor/system/proxy-sessions?vdom=$FORTIPROXY_VDOM"
+else
+    FORTIPROXY_API_URL="https://$FORTIPROXY_HOST/api/v2/monitor/system/proxy-sessions"
+fi
 
 # Query FortiProxy API for active proxy sessions
 response=$(curl -s -k -H "Authorization: Bearer $FORTIPROXY_TOKEN" "$FORTIPROXY_API_URL")
