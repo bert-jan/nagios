@@ -50,8 +50,8 @@ if [[ -z "$expiry_date" || "$expiry_date" == "null" ]]; then
     exit 3
 fi
 
-# Convert expiry date and current date to a comparable format
-expiry_epoch=$(date -d "$expiry_date" +%s)
+# Convert expiry date (in ISO 8601 format) and current date to epoch format
+expiry_epoch=$(date -d "$(echo "$expiry_date" | sed 's/\(.*\)T.*/\1/')" +%s)
 current_epoch=$(date +%s)
 diff_days=$(( (expiry_epoch - current_epoch) / 86400 ))
 
