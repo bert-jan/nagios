@@ -3,7 +3,6 @@ import argparse
 import sys
 from datetime import datetime
 
-# Functie om alerts van de Nutanix API op te halen en te controleren
 def check_alerts(api_url, bearer_token, severity, threshold):
     headers = {
         'Authorization': f'Bearer {bearer_token}',
@@ -22,7 +21,6 @@ def check_alerts(api_url, bearer_token, severity, threshold):
     alert_count = data.get('metadata', {}).get('total_entities', 0)
     alert_titles = [entity.get('alert_title', 'No description provided') for entity in data.get('entities', [])]
 
-    # Nagios output op basis van de threshold
     if alert_count >= threshold:
         status_text = f"{severity.upper()} - {alert_count} {severity.lower()} alert(s) (Threshold: {threshold})"
         status_code = 2 if severity == "CRITICAL" else 1
@@ -30,7 +28,6 @@ def check_alerts(api_url, bearer_token, severity, threshold):
         status_text = f"OK - No {severity.lower()} alerts exceeding threshold"
         status_code = 0
 
-    # Output met beschrijvingen van alerts en perfdata
     extended_info = "\n".join(alert_titles)
     perf_data = f"{severity.lower()}s={alert_count}"
     
@@ -38,20 +35,16 @@ def check_alerts(api_url, bearer_token, severity, threshold):
 
 def main():
     parser = argparse.ArgumentParser(description="Nagios check for Nutanix Prism alerts.")
-    parser.add_argument("-u", "--url", required=True, help="Nutanix API URL (e.g., https://HOSTNAME:9440)")
+    parser.add_argument("-u", "--url", required=True, help="Nutanix API base URL (e.g., https://HOSTNAME:9440)")
     parser.add_argument("-t", "--token", required=True, help="Bearer token for Nutanix API authentication")
     parser.add_argument("-w", "--warning-count", type=int, default=1, help="Threshold for warning alerts")
-    parser.add_argument("-C", "--critical-count", type=int, default=1, help="Threshold for critical alerts")
+    parser.add_argument("-c", "--critical-count", type=int, default=1, help="Threshold for critical alerts")
     
     args = parser.parse_args()
 
-    # Check WARNING alerts
     warning_text, warning_status, warning_perf, warning_info = check_alerts(args.url, args.token, "WARNING", args.warning_count)
-
-    # Check CRITICAL alerts
     critical_text, critical_status, critical_perf, critical_info = check_alerts(args.url, args.token, "CRITICAL", args.critical_count)
 
-    # Final output en statuscode
     if critical_status == 2:
         print(f"{critical_text} | {critical_perf}\n{critical_info}")
         sys.exit(2)
