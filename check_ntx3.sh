@@ -41,26 +41,28 @@ check_alerts() {
   alert_count=$(echo "$response" | jq '.metadata.total_entities')
   alert_titles=$(echo "$response" | jq -r '.entities[].alert_title')
 
-  # Controleer of het aantal alerts drempel overschrijdt en return output
+  # Return output alleen als er alerts zijn
   if [[ "$alert_count" -ge "$threshold" && "$alert_count" -gt 0 ]]; then
     echo "$severity - $alert_count $severity alert(s) (Threshold: $threshold)"
     echo "$alert_titles"
   fi
 
-  # Perfdata output
-  echo -n "$perf_label=${alert_count};${threshold}; "
+  # Alleen perfdata bij niet-nul alerts
+  if [[ "$alert_count" -gt 0 ]]; then
+    echo -n "$perf_label=${alert_count};${threshold}; "
+  fi
 }
 
 # Variabelen voor waarschuwingen en kritische meldingen
 warning_output=$(check_alerts "WARNING" "$WARNING_THRESHOLD")
 critical_output=$(check_alerts "CRITICAL" "$CRITICAL_THRESHOLD")
 
-# Samenvatting voor Nagios output
+# Nagios-output samenvatten
 if [[ -n "$critical_output" ]]; then
-  echo "$critical_output | $(check_alerts "CRITICAL" "$CRITICAL_THRESHOLD")$(check_alerts "WARNING" "$WARNING_THRESHOLD")"
+  echo "$critical_output | criticals=${CRITICAL_THRESHOLD}; $(check_alerts "WARNING" "$WARNING_THRESHOLD")"
   exit 2
 elif [[ -n "$warning_output" ]]; then
-  echo "$warning_output | $(check_alerts "WARNING" "$WARNING_THRESHOLD")"
+  echo "$warning_output | warnings=${WARNING_THRESHOLD};"
   exit 1
 else
   echo "OK - No active alerts exceeding thresholds | warnings=0;${WARNING_THRESHOLD}; criticals=0;${CRITICAL_THRESHOLD};"
