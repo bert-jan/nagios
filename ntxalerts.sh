@@ -31,6 +31,7 @@ fi
 check_alerts() {
   local severity="$1"
   local threshold="$2"
+  local perf_label="${severity,,}s"
 
   # Haal data op van de Nutanix API
   response=$(curl -s -k -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -40,33 +41,28 @@ check_alerts() {
   alert_count=$(echo "$response" | jq '.metadata.total_entities')
   alert_titles=$(echo "$response" | jq -r '.entities[].alert_title')
 
-  # Output bij alert overschrijding
-  if [[ "$alert_count" -ge "$threshold" ]]; then
+  # Alert output als count de threshold bereikt of overschrijdt
+  if [[ "$alert_count" -ge "$threshold" && "$alert_count" -gt 0 ]]; then
     echo "$severity - $alert_count $severity alert(s) (Threshold: $threshold)"
     echo "$alert_titles"
   fi
 
-  # Perfdata output toevoegen
-  perfdata="${severity,,}s=${alert_count};${threshold}; "
-  echo -n "$perfdata"
+  # Perfdata output
+  echo -n "$perf_label=${alert_count};${threshold}; "
 }
 
-# Controleer op WARNING alerts en print status
+# Variabelen voor waarschuwingen en kritische meldingen
 warning_output=$(check_alerts "WARNING" "$WARNING_THRESHOLD")
-warning_exit=$?
-
-# Controleer op CRITICAL alerts en print status, alleen bij alerts > 0
 critical_output=$(check_alerts "CRITICAL" "$CRITICAL_THRESHOLD")
-critical_exit=$?
 
-# Nagios status en perfdata samenvatting
-if [[ "$critical_exit" -eq 2 ]]; then
-  echo "$critical_output | $warning_output"
+# Samenvatting voor Nagios output
+if [[ -n "$critical_output" ]]; then
+  echo "$critical_output | ${critical_output} ${warning_output}"
   exit 2
-elif [[ "$warning_exit" -eq 1 ]]; then
-  echo "$warning_output | $critical_output"
+elif [[ -n "$warning_output" ]]; then
+  echo "$warning_output | ${warning_output}"
   exit 1
 else
-  echo "OK - No active alerts exceeding thresholds | ${warning_output}${critical_output}"
+  echo "OK - No active alerts exceeding thresholds | warnings=0;${WARNING_THRESHOLD}; criticals=0;${CRITICAL_THRESHOLD};"
   exit 0
 fi
