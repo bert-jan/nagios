@@ -24,60 +24,61 @@ if [[ -z "$NUTANIX_API_URL" || -z "$BEARER_TOKEN" ]]; then
     exit 3
 fi
 
-# Set the Nutanix API endpoint for alerts
-API_URL="$NUTANIX_API_URL/api/nutanix/v2/alerts"
+# Function to fetch alerts and display details
+function check_alerts() {
+    local severity="$1"
+    local threshold="$2"
 
-# Fetch alerts from the API
-alerts_response=$(curl -s -k -H "Authorization: Bearer $BEARER_TOKEN" "$API_URL")
+    # Fetch alerts for the specified severity
+    local response=$(curl -s -k -H "Authorization: Bearer $BEARER_TOKEN" \
+        "${NUTANIX_API_URL}/PrismGateway/services/rest/v2.0/alerts/?resolved=false&severity=${severity}&get_causes=true&detailed_info=true")
 
-# Check for API request errors
-if [[ $? -ne 0 || -z "$alerts_response" ]]; then
-    echo "UNKNOWN - API request failed or returned empty response"
-    exit 3
-fi
+    # Check if API call was successful
+    if [[ $? -ne 0 || -z "$response" ]]; then
+        echo "UNKNOWN - API request failed or returned empty response for ${severity} alerts"
+        return 3
+    fi
 
-# Validate JSON and check if 'entities' field is present
-data_present=$(echo "$alerts_response" | jq -e '.entities | length > 0' 2>/dev/null)
-if [[ "$data_present" != "true" ]]; then
-    echo "OK - No alerts found or 'entities' field is empty in API response | warnings=0 criticals=0"
+    # Count the number of alerts based on .metadata.total_entities
+    local alert_count=$(echo "$response" | jq '.metadata.total_entities')
+    if [[ -z "$alert_count" || "$alert_count" == "null" ]]; then
+        alert_count=0
+    fi
+
+    # Collect alert titles for extended status information
+    local alert_titles=$(echo "$response" | jq -r '.entities[].alert_title')
+
+    # Evaluate threshold and prepare status
+    local output=""
+    local status=0
+    if (( alert_count >= threshold )); then
+        if [[ "$severity" == "CRITICAL" ]]; then
+            output="CRITICAL - $alert_count critical alert(s) (Threshold: $threshold)"
+            status=2
+        elif [[ "$severity" == "WARNING" ]]; then
+            output="WARNING - $alert_count warning alert(s) (Threshold: $threshold)"
+            status=1
+        fi
+    else
+        output="OK - No $severity alerts exceeding threshold"
+    fi
+
+    # Generate final output with extended status information
+    echo -e "$output | ${severity,,}s=$alert_count\n$alert_titles"
+    return $status
+}
+
+# Run checks for both WARNING and CRITICAL severities
+check_alerts "WARNING" "$WARNING_COUNT_THRESHOLD"
+warning_status=$?
+check_alerts "CRITICAL" "$CRITICAL_COUNT_THRESHOLD"
+critical_status=$?
+
+# Exit with the highest status among warning and critical checks
+if (( critical_status == 2 )); then
+    exit 2
+elif (( warning_status == 1 )); then
+    exit 1
+else
     exit 0
 fi
-
-# Initialize counters
-warning_count=0
-critical_count=0
-alert_messages=""
-
-# Process each alert
-echo "$alerts_response" | jq -c '.entities[] | select(.severity == "WARNING" or .severity == "CRITICAL") | select(.resolved == false and .acknowledged == false)' | while IFS= read -r alert; do
-    severity=$(echo "$alert" | jq -r '.severity')
-    description=$(echo "$alert" | jq -r '.alert_title // "No description provided"')
-
-    case "$severity" in
-        WARNING)
-            ((warning_count++))
-            alert_messages+="WARNING - $description\n"
-            ;;
-        CRITICAL)
-            ((critical_count++))
-            alert_messages+="CRITICAL - $description\n"
-            ;;
-    esac
-done
-
-# Generate output based on the counts and specified thresholds
-output=""
-status=0
-if (( critical_count >= CRITICAL_COUNT_THRESHOLD )); then
-    output="CRITICAL - $critical_count critical alert(s) (Threshold: $CRITICAL_COUNT_THRESHOLD)"
-    status=2
-elif (( warning_count >= WARNING_COUNT_THRESHOLD )); then
-    output="WARNING - $warning_count warning alert(s) (Threshold: $WARNING_COUNT_THRESHOLD)"
-    status=1
-else
-    output="OK - No warning or critical alerts"
-fi
-
-# Print final output with perfdata
-echo -e "$output | warnings=$warning_count criticals=$critical_count\n$alert_messages"
-exit $status
