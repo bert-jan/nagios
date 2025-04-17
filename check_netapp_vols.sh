@@ -1,46 +1,108 @@
 #!/bin/bash
 
-while getopts "u:p:w:c:h:" opt; do
-  case $opt in
-    u) USERNAME=$OPTARG ;;
-    p) PASSWORD=$OPTARG ;;
-    w) WARNING=$OPTARG ;;
-    c) CRITICAL=$OPTARG ;;
-    h) NETAPP_IP=$OPTARG ;;
-    *) echo "Usage: $0 -u <username> -p <password> -w <warning> -c <critical> -h <NetApp_IP>" ;;
-  esac
-done
+SCRIPT_NAME=$(basename "$0")
 
-if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ] || [ -z "$WARNING" ] || [ -z "$CRITICAL" ] || [ -z "$NETAPP_IP" ]; then
-  echo "ERROR: Missing required arguments"
+# === Function: Print usage help ===
+print_usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME --volume-count -H <host> -n <username> -p <password> -s <svm> -w <warning> -c <critical>
+
+Check:
+  --volume-count     Checks the number of volumes in the specified SVM
+
+Options:
+  -H   NetApp ONTAP API base URL (e.g. https://netapp.local)
+  -n   Username
+  -p   Password
+  -s   SVM name (Storage Virtual Machine)
+  -w   Warning threshold (e.g. 100)
+  -c   Critical threshold (e.g. 150)
+
+Example:
+  $SCRIPT_NAME --volume-count -H https://netapp.local -n admin -p secret -s svm1 -w 100 -c 150
+EOF
   exit 3
-fi
+}
 
-SVM="svm1"
+# === Function: Output status with perfdata ===
+exit_with_status() {
+  local status=$1
+  local message=$2
+  local perfdata=$3
+  echo "$message | $perfdata"
+  exit "$status"
+}
 
-RESPONSE=$(curl -k -u "$USERNAME:$PASSWORD" "https://$NETAPP_IP/api/storage/volumes?svm=$SVM")
+# === Function: Make API call ===
+perform_api_call() {
+  local endpoint="$1"
+  RESPONSE=$(curl -s -u "$USERNAME:$PASSWORD" -k "$HOST$endpoint")
+  if [[ -z "$RESPONSE" ]]; then
+    exit_with_status 2 "CRITICAL - No response from API ($endpoint)" ""
+  fi
+}
 
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to query NetApp API"
-  exit 2
-fi
+# === Function: Check volume count ===
+check_volume_count() {
+  local endpoint="/api/storage/volumes?svm=${SVM}"
+  perform_api_call "$endpoint"
 
-VOLUME_COUNT=$(echo "$RESPONSE" | jq '.records | length')
+  NUM_RECORDS=$(echo "$RESPONSE" | jq -r '.num_records')
 
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to parse API response"
-  exit 2
-fi
+  if ! [[ "$NUM_RECORDS" =~ ^[0-9]+$ ]]; then
+    exit_with_status 2 "CRITICAL - Could not parse 'num_records' from API response" "volumes=0;$WARNING;$CRITICAL;0;"
+  fi
 
-PERFDATA="volumes=$VOLUME_COUNT;;;;"
+  if (( NUM_RECORDS >= CRITICAL )); then
+    exit_with_status 2 "CRITICAL - Volume count is $NUM_RECORDS" "volumes=$NUM_RECORDS;$WARNING;$CRITICAL;0;"
+  elif (( NUM_RECORDS >= WARNING )); then
+    exit_with_status 1 "WARNING - Volume count is $NUM_RECORDS" "volumes=$NUM_RECORDS;$WARNING;$CRITICAL;0;"
+  else
+    exit_with_status 0 "OK - Volume count is $NUM_RECORDS" "volumes=$NUM_RECORDS;$WARNING;$CRITICAL;0;"
+  fi
+}
 
-if [ "$VOLUME_COUNT" -ge "$CRITICAL" ]; then
-  echo "CRITICAL: $VOLUME_COUNT volumes (>= $CRITICAL) | $PERFDATA"
-  exit 2
-elif [ "$VOLUME_COUNT" -ge "$WARNING" ]; then
-  echo "WARNING: $VOLUME_COUNT volumes (>= $WARNING) | $PERFDATA"
-  exit 1
-else
-  echo "OK: $VOLUME_COUNT volumes | $PERFDATA"
-  exit 0
-fi
+# === Function: Parse arguments ===
+parse_args() {
+  while [[ "$1" != "" ]]; do
+    case "$1" in
+      --volume-count)    CHECK_TYPE="volume" ;;
+      -H)                shift; HOST="$1" ;;
+      -n)                shift; USERNAME="$1" ;;
+      -p)                shift; PASSWORD="$1" ;;
+      -s)                shift; SVM="$1" ;;
+      -w)                shift; WARNING="$1" ;;
+      -c)                shift; CRITICAL="$1" ;;
+      -h|--help)         print_usage ;;
+      *) echo "Unknown parameter: $1"; print_usage ;;
+    esac
+    shift
+  done
+
+  # Validate required arguments
+  if [[ -z "$CHECK_TYPE" || -z "$HOST" || -z "$USERNAME" || -z "$PASSWORD" || -z "$SVM" || -z "$WARNING" || -z "$CRITICAL" ]]; then
+    echo "Error: Missing required arguments"
+    print_usage
+  fi
+
+  if ! command -v jq &>/dev/null; then
+    echo "Error: 'jq' is not installed"
+    exit 2
+  fi
+}
+
+# === Main function ===
+main() {
+  parse_args "$@"
+
+  case "$CHECK_TYPE" in
+    volume)
+      check_volume_count
+      ;;
+    *)
+      exit_with_status 3 "UNKNOWN - Invalid check type" ""
+      ;;
+  esac
+}
+
+main "$@"
