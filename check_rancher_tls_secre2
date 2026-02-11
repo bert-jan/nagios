@@ -1,0 +1,101 @@
+#!/bin/bash
+
+print_help() {
+cat <<EOF
+Usage:
+$0 -u <url> -t <token> -c <cluster> -n <namespace> \
+   -s <secret1,secret2> -w <warning_days> -C <critical_days>
+   [--insecure] [--proxy http://proxy:port]
+
+Example:
+$0 -u https://rancher.local -t TOKEN \
+   -c local -n cattle-system \
+   -s serving-cert,cattle-webhook-tls \
+   -w 30 -C 15 --insecure
+EOF
+}
+
+# Defaults
+INSECURE=0
+PROXY=""
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -u) URL="$2"; shift 2 ;;
+    -t) TOKEN="$2"; shift 2 ;;
+    -c) CLUSTER="$2"; shift 2 ;;
+    -n) NAMESPACE="$2"; shift 2 ;;
+    -s) SECRETS="$2"; shift 2 ;;
+    -w) WARNING="$2"; shift 2 ;;
+    -C) CRITICAL="$2"; shift 2 ;;
+    --insecure) INSECURE=1; shift ;;
+    --proxy) PROXY="$2"; shift 2 ;;
+    -h) print_help; exit 0 ;;
+    *) print_help; exit 1 ;;
+  esac
+done
+
+if [[ -z "$URL" || -z "$TOKEN" || -z "$CLUSTER" || -z "$NAMESPACE" || -z "$SECRETS" || -z "$WARNING" || -z "$CRITICAL" ]]; then
+  print_help
+  exit 3
+fi
+
+IFS=',' read -ra SECRET_ARRAY <<< "$SECRETS"
+
+EXIT_CODE=0
+OUTPUT=""
+PERFDATA=""
+
+for SECRET in "${SECRET_ARRAY[@]}"; do
+  API="/k8s/clusters/$CLUSTER/api/v1/namespaces/$NAMESPACE/secrets/$SECRET"
+
+  CURL_OPTS="-s"
+  [[ $INSECURE -eq 1 ]] && CURL_OPTS="$CURL_OPTS -k"
+  [[ -n "$PROXY" ]] && CURL_OPTS="$CURL_OPTS -x $PROXY"
+
+  CERT=$(curl $CURL_OPTS -H "Authorization: Bearer $TOKEN" "$URL$API" \
+      | jq -r '.data["tls.crt"]' 2>/dev/null)
+
+  if [[ -z "$CERT" || "$CERT" == "null" ]]; then
+    OUTPUT+="CRITICAL: $SECRET not found; "
+    EXIT_CODE=2
+    continue
+  fi
+
+  END_EPOCH=$(echo "$CERT" | base64 -d 2>/dev/null \
+      | openssl x509 -noout -enddate 2>/dev/null \
+      | cut -d= -f2 \
+      | xargs -I{} date -d "{}" +%s 2>/dev/null)
+
+  if [[ -z "$END_EPOCH" ]]; then
+    OUTPUT+="CRITICAL: $SECRET parse error; "
+    EXIT_CODE=2
+    continue
+  fi
+
+  NOW=$(date +%s)
+  DAYS_LEFT=$(( (END_EPOCH - NOW) / 86400 ))
+
+  PERFDATA+="$SECRET=$DAYS_LEFT;$WARNING;$CRITICAL "
+
+  if (( DAYS_LEFT <= CRITICAL )); then
+    OUTPUT+="CRITICAL: $SECRET expires in $DAYS_LEFT days; "
+    EXIT_CODE=2
+  elif (( DAYS_LEFT <= WARNING )); then
+    [[ $EXIT_CODE -lt 2 ]] && EXIT_CODE=1
+    OUTPUT+="WARNING: $SECRET expires in $DAYS_LEFT days; "
+  else
+    OUTPUT+="OK: $SECRET $DAYS_LEFT days; "
+  fi
+done
+
+case $EXIT_CODE in
+  0) STATUS="OK" ;;
+  1) STATUS="WARNING" ;;
+  2) STATUS="CRITICAL" ;;
+  *) STATUS="UNKNOWN" ;;
+esac
+
+echo "$STATUS - $OUTPUT | $PERFDATA"
+exit $EXIT_CODE
